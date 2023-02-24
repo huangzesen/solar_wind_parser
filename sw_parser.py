@@ -89,9 +89,6 @@ def SolarWindScanner(
     N = int(np.floor((Btot.index[-1] - tend0)/step)) + 1
     inputs = []
 
-    # show length of Btot and Dist_au
-    # if len(Btot) != len(Dist_au):
-        # print("\nlen(Btot)=%d, len(Dist_au)=%d, interpolate Dist_au!" %(len(Btot), len(Dist_au)))
     print('Interpolating Dist_au...')
 
     # interpolate Dist_au with scipy.interpolate.interp1d
@@ -186,20 +183,8 @@ def SolarWindScannerInnerLoopParallel(i1):
     indices = Btot.index[ind]
     btot = Btot[indices].values
 
-    # if len(Btot) == len(Dist_au):
-    #     # if same sampling frequency
-    #     r = Dist_au[indices].values
-    # else:
-    # use interpolated f_dist_au
     ts = Btot_index_unix[ind]
     r = f_dist_au(ts)
-
-    # # linear rescale
-    # id1 = np.argmin(np.abs(Dist_au.index  - tstart))
-    # id2 = np.argmin(np.abs(Dist_au.index  - tend))
-    # r1 = Dist_au[id1]
-    # r2 = Dist_au[id2]
-    # r = np.linspace(r1, r2, len(btot))
         
     # normalize btot with r
     btot1 = btot * ((r/r[0])**2)
