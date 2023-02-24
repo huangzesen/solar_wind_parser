@@ -192,6 +192,7 @@ def SolarWindScannerInnerLoopParallel(i1):
     # else:
     # use interpolated f_dist_au
     ts = Btot_index_unix[ind]
+    print(ts)
     r = f_dist_au(ts)
 
     # # linear rescale
