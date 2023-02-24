@@ -90,20 +90,20 @@ def SolarWindScanner(
     inputs = []
 
     # show length of Btot and Dist_au
-    if len(Btot) != len(Dist_au):
+    # if len(Btot) != len(Dist_au):
         # print("\nlen(Btot)=%d, len(Dist_au)=%d, interpolate Dist_au!" %(len(Btot), len(Dist_au)))
-        print('Interpolating Dist_au...')
+    print('Interpolating Dist_au...')
 
-        # interpolate Dist_au with scipy.interpolate.interp1d
-        ts = [t.timestamp() for t in Dist_au.index]
-        f_dist_au = interp1d(ts, Dist_au.values, 'linear', fill_value='extrapolate')
+    # interpolate Dist_au with scipy.interpolate.interp1d
+    ts = [t.timestamp() for t in Dist_au.index]
+    f_dist_au = interp1d(ts, Dist_au.values, 'linear', fill_value='extrapolate')
 
-        # create Btot unix index
-        Btot_index_unix = [t.timestamp for t in Btot.index]
+    # create Btot unix index
+    Btot_index_unix = [t.timestamp for t in Btot.index]
 
-        # print the input value range and Btot index range
-        print('Dist_au: %s - %s' %(Dist_au.index[0], Dist_au.index[-1]))
-        print('Btot: %s - %s' %(Btot.index[0], Btot.index[-1]))
+    # print the input value range and Btot index range
+    print('Dist_au: %s - %s' %(Dist_au.index[0], Dist_au.index[-1]))
+    print('Btot: %s - %s' %(Btot.index[0], Btot.index[-1]))
 
     print("\nTotal intervals= %d\n" %(N))
 
