@@ -99,7 +99,7 @@ def SolarWindScanner(
     f_dist_au = interp1d(ts, Dist_au.values, 'linear', fill_value='extrapolate')
 
     # create Btot unix index
-    Btot_index_unix = np.array([t.timestamp for t in Btot.index])
+    Btot_index_unix = np.array([t.timestamp() for t in Btot.index])
 
     # print the input value range and Btot index range
     print('Dist_au: %s - %s' %(Dist_au.index[0], Dist_au.index[-1]))
@@ -192,7 +192,7 @@ def SolarWindScannerInnerLoopParallel(i1):
     # else:
     # use interpolated f_dist_au
     ts = Btot_index_unix[ind]
-    r = f_dist_au(10000000000.0)
+    r = f_dist_au(ts)
 
     # # linear rescale
     # id1 = np.argmin(np.abs(Dist_au.index  - tstart))
