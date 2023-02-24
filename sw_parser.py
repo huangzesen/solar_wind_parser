@@ -112,7 +112,7 @@ def SolarWindScanner(
 
         alloc_input = {
             'Btot': Btot,
-            'Dist_au': Dist_au,
+            # 'Dist_au': Dist_au,
             'f_dist_au': f_dist_au,
             'Btot_index_unix': Btot_index_unix,
             'tstart0': tstart0,
@@ -162,18 +162,18 @@ def SolarWindScanner(
 
 
 def InitParallelAllocation(alloc_input):
-    global Btot, Dist_au, tstart0, settings, f_dist_au, Btot_index_unix
+    global Btot, tstart0, settings, f_dist_au, Btot_index_unix
     Btot = alloc_input['Btot'].copy()
-    Dist_au = alloc_input['Dist_au'].copy()
+    # Dist_au = alloc_input['Dist_au'].copy()
     tstart0 = alloc_input['tstart0']
     settings = alloc_input['settings']
     f_dist_au = alloc_input['f_dist_au']
-    Btot_index_unix = alloc_input['Btot_index_unix']
+    Btot_index_unix = alloc_input['Btot_index_unix'].copy()
 
 
 def SolarWindScannerInnerLoopParallel(i1):
     # access global variables
-    global Btot, Dist_au, tstart0, settings, f_dist_au, Btot_index_unix
+    global Btot, tstart0, settings, f_dist_au, Btot_index_unix
 
     win = settings['win']
     step = settings['step']
@@ -186,20 +186,20 @@ def SolarWindScannerInnerLoopParallel(i1):
     indices = Btot.index[ind]
     btot = Btot[indices].values
 
-    if len(Btot) == len(Dist_au):
-        # if same sampling frequency
-        r = Dist_au[indices].values
-    else:
-        # use interpolated f_dist_au
-        ts = Btot_index_unix[ind]
-        r = f_dist_au(ts)
+    # if len(Btot) == len(Dist_au):
+    #     # if same sampling frequency
+    #     r = Dist_au[indices].values
+    # else:
+    # use interpolated f_dist_au
+    ts = Btot_index_unix[ind]
+    r = f_dist_au(ts)
 
-        # # linear rescale
-        # id1 = np.argmin(np.abs(Dist_au.index  - tstart))
-        # id2 = np.argmin(np.abs(Dist_au.index  - tend))
-        # r1 = Dist_au[id1]
-        # r2 = Dist_au[id2]
-        # r = np.linspace(r1, r2, len(btot))
+    # # linear rescale
+    # id1 = np.argmin(np.abs(Dist_au.index  - tstart))
+    # id2 = np.argmin(np.abs(Dist_au.index  - tend))
+    # r1 = Dist_au[id1]
+    # r2 = Dist_au[id2]
+    # r = np.linspace(r1, r2, len(btot))
         
     # normalize btot with r
     btot1 = btot * ((r/r[0])**2)
