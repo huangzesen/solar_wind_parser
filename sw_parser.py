@@ -4,6 +4,7 @@ import time, sys
 from scipy.stats import shapiro, kstest
 from scipy.interpolate import interp1d
 from multiprocessing import Pool
+from scipy.optimize import curve_fit
 import tqdm
 from gc import collect
 
@@ -176,6 +177,7 @@ def SolarWindScannerInnerLoopParallel(i1):
     step = settings['step']
     methods = settings['methods']
     downsample_size = settings['downsample_size']
+    n_sigma = settings['n_sigma']
 
     tstart= tstart0 + i1 * step
     tend = tstart + win
@@ -185,19 +187,23 @@ def SolarWindScannerInnerLoopParallel(i1):
 
     ts = Btot_index_unix[ind]
     r = f_dist_au(ts)
-        
+
+    # find the rescaling scale with r
+    rfit = curve_fit(f, np.log10(r), np.log10(btot))
+    scale = -rfit[0][0]
+
     # normalize btot with r
-    btot1 = btot * ((r/r[0])**2)
+    btot1 = btot * ((r/r[0])**scale)
 
     # dist ratio
     r_ratio = np.max(r)/np.min(r)
     
     
-    # discard points outside of 3 sigma
+    # discard points outside of n sigma
     # solar wind has a much higher chance than gaussian to have extreme values
     mean = np.mean(btot1)
     std = np.std(btot1)
-    keep_ind = (btot1 > mean - 3*std) & (btot1 < mean + 3*std)
+    keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
     btot1[np.invert(keep_ind)] = np.nan
     nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
     x = btot1[np.invert(np.isnan(btot1))]
@@ -228,7 +234,9 @@ def SolarWindScannerInnerLoopParallel(i1):
         't1': tend,
         'nan_ratio': nan_ratio,
         'normalities': normalities,
-        'r_ratio': r_ratio
+        'r_ratio': r_ratio,
+        'settings': settings,
+        'fit_results': rfit
     }
 
     return scan
@@ -268,6 +276,9 @@ def SolarWindScannerInnerLoopSequential(input):
 
     return scan
 
+
+def f(x,a,b):
+    return a*x+b
 
 # some testing function for parallelization
 
