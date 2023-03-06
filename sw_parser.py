@@ -189,7 +189,8 @@ def SolarWindScannerInnerLoopParallel(i1):
     r = f_dist_au(ts)
 
     # find the rescaling scale with r
-    rfit = curve_fit(f, np.log10(r), np.log10(btot))
+    ind = np.invert((np.isnan(r)) | np.isnan(btot))
+    rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
     scale = -rfit[0][0]
 
     # normalize btot with r
