@@ -185,60 +185,81 @@ def SolarWindScannerInnerLoopParallel(i1):
     indices = Btot.index[ind]
     btot = Btot[indices].values
 
-    ts = Btot_index_unix[ind]
-    r = f_dist_au(ts)
+    try:
 
-    # find the rescaling scale with r
-    ind = np.invert((np.isnan(r)) | np.isnan(btot))
-    rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
-    scale = -rfit[0][0]
+        ts = Btot_index_unix[ind]
+        r = f_dist_au(ts)
 
-    # normalize btot with r
-    btot1 = btot * ((r/r[0])**scale)
+        # find the rescaling scale with r
+        ind = np.invert((np.isnan(r)) | np.isnan(btot))
+        rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
+        scale = -rfit[0][0]
 
-    # dist ratio
-    r_ratio = np.max(r)/np.min(r)
-    
-    
-    # discard points outside of n sigma
-    # solar wind has a much higher chance than gaussian to have extreme values
-    mean = np.mean(btot1)
-    std = np.std(btot1)
-    keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
-    btot1[np.invert(keep_ind)] = np.nan
-    nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
-    x = btot1[np.invert(np.isnan(btot1))]
+        # normalize btot with r
+        btot1 = btot * ((r/r[0])**scale)
 
-    normalities = {}    
-    for method, ms in methods.items():
-        if len(x) < 500:
-            # if not enough samples, continue
-            normality = np.nan
-        else:
-            # normalize input for normality test
-            x = (x-np.mean(x))/np.std(x)
-
-            # normality test
-            if method == 'shapiro':
-                a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
-            elif method == 'kstest':
-                # normalize the distribution for kstest
-                a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
-            else:
-                raise ValueError("Wrong method")
-            normality = np.sum(a1 > 0.05)/len(a1)
+        # dist ratio
+        r_ratio = np.max(r)/np.min(r)
         
-        normalities[method] = normality
-    
-    scan = {
-        't0': tstart,
-        't1': tend,
-        'nan_ratio': nan_ratio,
-        'normalities': normalities,
-        'r_ratio': r_ratio,
-        'settings': settings,
-        'fit_results': rfit
-    }
+        
+        # discard points outside of n sigma
+        # solar wind has a much higher chance than gaussian to have extreme values
+        mean = np.mean(btot1)
+        std = np.std(btot1)
+        keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
+        btot1[np.invert(keep_ind)] = np.nan
+        nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
+        x = btot1[np.invert(np.isnan(btot1))]
+
+        normalities = {}    
+        for method, ms in methods.items():
+            if len(x) < 500:
+                # if not enough samples, continue
+                normality = np.nan
+            else:
+                # normalize input for normality test
+                x = (x-np.mean(x))/np.std(x)
+
+                # normality test
+                if method == 'shapiro':
+                    a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
+                elif method == 'kstest':
+                    # normalize the distribution for kstest
+                    a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
+                else:
+                    raise ValueError("Wrong method")
+                normality = np.sum(a1 > 0.05)/len(a1)
+            
+            normalities[method] = normality
+        
+        scan = {
+            't0': tstart,
+            't1': tend,
+            'nan_ratio': nan_ratio,
+            'normalities': normalities,
+            'r_ratio': r_ratio,
+            'settings': settings,
+            'fit_results': rfit
+        }
+
+    except:
+        r_ratio = np.max(r)/np.min(r)
+        normalities = {}    
+        for method, ms in methods.items():
+            normalities[method]=np.nan
+            
+        rfit = (
+            np.array([np.nan,np.nan]), np.array([[np.nan,np.nan],[np.nan,np.nan]])
+        )
+        scan = {
+            't0': tstart,
+            't1': tend,
+            'nan_ratio': 1.0,
+            'normalities': normalities,
+            'r_ratio': r_ratio,
+            'settings': settings,
+            'fit_results': rfit
+        }
 
     return scan
 
