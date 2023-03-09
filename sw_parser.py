@@ -463,8 +463,8 @@ def SolarWindParser(
                         # if the last one is good, break
                         else:
                             print("")
-                            print("keeping: tstart=%s, tend=%s, normality=%.4f, len = %.2f Hr" %(
-                                scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h')
+                            print("keeping: tstart=%s, tend=%s, normality=%.4f, len = %.2f Hr, len = %d" %(
+                                scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h'), len(scans_in)
                                 ))
                             # set the new starting point
                             print("")
