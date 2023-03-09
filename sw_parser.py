@@ -275,7 +275,8 @@ def SolarWindParser(
         Dist_au,
         df_scans,
         settings=None,
-        scan_settings = None
+        scan_settings = None, 
+        verbose=True
     ):
     """
     Solar Wind Parser
@@ -287,8 +288,16 @@ def SolarWindParser(
     if settings is None:
         settings = default_settings
 
-    for k,v in settings.items():
-        print(k,v)
+    if verbose:
+        print("\n----------------------------------")
+        print("\tSolar Wind Scanner")
+        print("----------------------------------\n")
+        print("Settings: ")
+        for k,v in settings.items():
+            print(k,v)
+        print("Scan settings: ")
+        for k,v in scan_settings.items():
+            print(k,v)
 
     win = scan_settings['win']
     step_out = scan_settings['step']
