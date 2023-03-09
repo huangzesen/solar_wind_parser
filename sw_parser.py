@@ -290,7 +290,7 @@ def SolarWindParser(
 
     if verbose:
         print("\n----------------------------------")
-        print("\tSolar Wind Scanner")
+        print("\tSolar Wind Parser")
         print("----------------------------------\n")
         print("Settings: ")
         for k,v in settings.items():
