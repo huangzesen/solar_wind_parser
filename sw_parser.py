@@ -346,7 +346,8 @@ def SolarWindParser(
     while True:
             
         normality = df_scans.loc[tstart,'sw']
-
+        nan_ratio = df_scans.loc[tstart,'nan_ratio']
+        
         scans_in = []
             
         # found good interval!
