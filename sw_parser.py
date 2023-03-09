@@ -521,7 +521,7 @@ def SolarWindParser(
             tend = tend + step_out
         
         if tstart > df_scans.index[-1]:
-            break
+            break  
 
     results = {
         'scans': scans,
