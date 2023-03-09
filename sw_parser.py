@@ -411,8 +411,8 @@ def SolarWindParser(
                     normalities[method] = normality
                 
                 scan_in = {
-                    't0': tstart,
-                    't1': tend,
+                    't0': tstart_in,
+                    't1': tend_in,
                     'nan_ratio': nan_ratio,
                     'normalities': normalities,
                     'r_ratio': r_ratio,
