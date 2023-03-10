@@ -419,6 +419,7 @@ def SolarWindParser(
                     'r_ratio': r_ratio,
                     'settings': settings,
                     'fit_results': rfit,
+                    'fit_scale': -rfit[0][0],
                     'normality': normalities['shapiro']
                 }
                 
@@ -426,7 +427,7 @@ def SolarWindParser(
                 scans_in.append(scan_in)
                 normality_in = scan_in['normality']
                 nan_ratio_in = scan_in['nan_ratio']
-                rfit_in = scan_in['fit_results']
+                rfit_in = scan_in['fit_scale']
 
                 # create scans_in dataframe
                 df = pd.DataFrame(scans_in)
@@ -441,14 +442,14 @@ def SolarWindParser(
                     print("")
                     print(" Thresh out: %.4f " %(normality_thresh_out))
                     print("first: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                        scans_in[0]['t0'], scans_in[0]['t1'], scans_in[0]['normality'], scans_in[0]['fit_results'], (scans_in[0]['t1']-scans_in[0]['t0'])/np.timedelta64(1, 'h')
+                        scans_in[0]['t0'], scans_in[0]['t1'], scans_in[0]['normality'], scans_in[0]['fit_scale'], (scans_in[0]['t1']-scans_in[0]['t0'])/np.timedelta64(1, 'h')
                         ))
                     print("last: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                        scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], scans_in[-1]['fit_results'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h')
+                        scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], scans_in[-1]['fit_scale'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h')
                         ))
                     ii = np.argmax(df['normality'])
                     print("best: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                        scans_in[ii]['t0'], scans_in[ii]['t1'], scans_in[ii]['normality'], scans_in[ii]['fit_results'], (scans_in[ii]['t1']-scans_in[ii]['t0'])/np.timedelta64(1, 'h')
+                        scans_in[ii]['t0'], scans_in[ii]['t1'], scans_in[ii]['normality'], scans_in[ii]['fit_scale'], (scans_in[ii]['t1']-scans_in[ii]['t0'])/np.timedelta64(1, 'h')
                         ))
                     print("")
                     
@@ -460,13 +461,13 @@ def SolarWindParser(
                         if scans_in[-1]['normality'] < normality_thresh_keep:
                             pop_out = scans_in.pop()
                             print("poping: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                                pop_out['t0'], pop_out['t1'], pop_out['normality'], pop_out['fit_results'], (pop_out['t1']-pop_out['t0'])/np.timedelta64(1, 'h')
+                                pop_out['t0'], pop_out['t1'], pop_out['normality'], pop_out['fit_scale'], (pop_out['t1']-pop_out['t0'])/np.timedelta64(1, 'h')
                                 ))
                         # if the last one is good, break
                         else:
                             print("")
                             print("keeping: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr, len = %d" %(
-                                scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], scans_in[-1]['fit_results'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h'), len(scans_in)
+                                scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], scans_in[-1]['fit_scale'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h'), len(scans_in)
                                 ))
                             # set the new starting point
                             print("")
