@@ -346,9 +346,19 @@ def SolarWindParser(
     scans = []
     streams = []
     while True:
+        
+        try:
+            normality = df_scans.loc[tstart,'sw']
+            nan_ratio = df_scans.loc[tstart,'nan_ratio']
+        except:
+            print("Skipping: %s - %, not in df_scans!" %(tstart, tend))
+            tstart = tstart + step_out
+            tend = tend + step_out
+
+            if tstart > df_scans.index[-1]:
+                break  
             
-        normality = df_scans.loc[tstart,'sw']
-        nan_ratio = df_scans.loc[tstart,'nan_ratio']
+            continue        
         
         scans_in = []
             
