@@ -401,10 +401,7 @@ def SolarWindParser(
 
                         # normality test
                         if method == 'shapiro':
-                            # a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
-                            @parfor(range(ms['Ntests']))
-                            def a1(i1):
-                                return shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue
+                            a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
                         elif method == 'kstest':
                             # normalize the distribution for kstest
                             a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
