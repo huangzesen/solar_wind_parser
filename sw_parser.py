@@ -352,7 +352,7 @@ def SolarWindParser(
         scans_in = []
             
         # found good interval!
-        if normality >= normality_thresh_in:
+        if (normality >= normality_thresh_in) & (np.invert(np.isnan(normality))):
             print("Found!: tstart=%s, tend=%s, normality=%.4f, len = %s" %(tstart, tend, normality, tend-tstart))
 
             # set tstart and tend in the inner loop
@@ -434,7 +434,7 @@ def SolarWindParser(
                 max_norm = df['normality'].max()
 
                 # end the eating process if normality < thresh
-                if normality_in < normality_thresh_out:
+                if (normality_in < normality_thresh_out) | (np.isnan(normality_in)):
                     
                     # print the first, last, and best record
                     ii = np.argmax(df['normality'])
