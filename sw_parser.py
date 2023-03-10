@@ -334,7 +334,8 @@ def SolarWindParser(
     f_dist_au = interp1d(ts, Dist_au.values, 'linear', fill_value='extrapolate')
 
     # resample the Btot for inner loop
-    Btot = Btot.resample(resample_freq).mean()
+    if resample_freq is not None:
+        Btot = Btot.resample(resample_freq).mean()
 
     # create Btot unix index
     Btot_index_unix = np.array([t.timestamp() for t in Btot.index])
