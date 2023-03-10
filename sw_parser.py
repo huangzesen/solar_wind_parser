@@ -419,7 +419,7 @@ def SolarWindParser(
                             # a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
                         elif method == 'kstest':
                             # normalize the distribution for kstest
-                            @parfor(range(ms['Ntests']), (x, shapiro, downsample_size,), bar=False)
+                            @parfor(range(ms['Ntests']), (x, kstest, downsample_size,), bar=False)
                             def worker(i1, x, kstest, downsample_size):
                                 return kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue
                             a1 = np.array(worker)
