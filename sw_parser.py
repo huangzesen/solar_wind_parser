@@ -412,10 +412,18 @@ def SolarWindParser(
 
                         # normality test
                         if method == 'shapiro':
-                            a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
+                            @parfor(range(ms['Ntests']), (x, shapiro, downsample_size,), bar=False)
+                            def worker(i1, x, shapiro, downsample_size):
+                                return shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue
+                            a1 = np.array(worker)
+                            # a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
                         elif method == 'kstest':
                             # normalize the distribution for kstest
-                            a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
+                            @parfor(range(ms['Ntests']), (x, shapiro, downsample_size,), bar=False)
+                            def worker(i1, x, kstest, downsample_size):
+                                return kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue
+                            a1 = np.array(worker)
+                            # a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
                         else:
                             raise ValueError("Wrong method")
                         normality = np.sum(a1 > 0.05)/len(a1)
