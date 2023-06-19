@@ -82,6 +82,8 @@ def SolarWindScanner(
 
     win = settings['win']
     step = settings['step']
+    
+    print("Samples per win: %d" %(int(1./(Btot.index[-1]-Btot.index[0]).total_seconds()*win.total_seconds()*len(Btot))))
 
     tstart0 = Btot.index[0]
     tend0 = tstart0 + win
@@ -205,8 +207,8 @@ def SolarWindScannerInnerLoopParallel(i1):
         
         # discard points outside of n sigma
         # solar wind has a much higher chance than gaussian to have extreme values
-        mean = np.mean(btot1)
-        std = np.std(btot1)
+        mean = np.nanmean(btot1)
+        std = np.nanstd(btot1)
         keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
         btot1[np.invert(keep_ind)] = np.nan
         nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
@@ -214,9 +216,10 @@ def SolarWindScannerInnerLoopParallel(i1):
 
         normalities = {}    
         for method, ms in methods.items():
-            if len(x) < 500:
+            if len(x) < 10000:
                 # if not enough samples, continue
                 normality = np.nan
+                raise ValueError("Not enough samples, len=%d, bmean=%.4f, bstd=%.4f" %(len(x), np.mean(x), np.std(x)))
             else:
                 # normalize input for normality test
                 x = (x-np.mean(x))/np.std(x)
@@ -230,6 +233,8 @@ def SolarWindScannerInnerLoopParallel(i1):
                 else:
                     raise ValueError("Wrong method")
                 normality = np.sum(a1 > 0.05)/len(a1)
+                # if np.isnan(normality):
+                    # raise ValueError("normality nan!!")
             
             normalities[method] = normality
         
@@ -244,7 +249,8 @@ def SolarWindScannerInnerLoopParallel(i1):
         }
 
     except:
-        r_ratio = np.max(r)/np.min(r)
+        # raise ValueError("normality nan!!")
+        # r_ratio = np.max(r)/np.min(r)
         normalities = {}    
         for method, ms in methods.items():
             normalities[method]=np.nan
@@ -257,7 +263,7 @@ def SolarWindScannerInnerLoopParallel(i1):
             't1': tend,
             'nan_ratio': 1.0,
             'normalities': normalities,
-            'r_ratio': r_ratio,
+            'r_ratio': np.nan,
             'settings': settings,
             'fit_results': rfit
         }
@@ -305,6 +311,7 @@ def SolarWindParser(
     methods = scan_settings['methods']
     downsample_size = scan_settings['downsample_size']
     n_sigma = scan_settings['n_sigma']
+    normality_key = scan_settings['normality_key']
 
     # inner loop step
     step_in = settings['step_in']
@@ -348,10 +355,12 @@ def SolarWindParser(
     while True:
         
         try:
-            normality = df_scans.loc[tstart,'sw']
+            normality = df_scans.loc[tstart,normality_key]
             nan_ratio = df_scans.loc[tstart,'nan_ratio']
+            r_fit_scale = df_scans.loc[tstart,'r_fit']
         except:
-            print("Skipping: %s - %, not in df_scans!" %(tstart, tend))
+            raise ValueError("No normality in df_scans")
+            print("Skipping: %s - %s, not in df_scans!" %(tstart, tend))
             tstart = tstart + step_out
             tend = tend + step_out
 
@@ -363,7 +372,7 @@ def SolarWindParser(
         scans_in = []
             
         # found good interval!
-        if (normality >= normality_thresh_in) & (np.invert(np.isnan(normality))):
+        if (normality >= normality_thresh_in) & (np.invert(np.isnan(normality))) & (np.abs(r_fit_scale) < scan_settings['r_fit_scale_thresh']):
             print("Found!: tstart=%s, tend=%s, normality=%.4f, len = %s" %(tstart, tend, normality, tend-tstart))
 
             # set tstart and tend in the inner loop
@@ -391,11 +400,12 @@ def SolarWindParser(
 
                 # dist ratio
                 r_ratio = np.max(r)/np.min(r)
+                
 
                 # discard points outside of n sigma
                 # solar wind has a much higher chance than gaussian to have extreme values
-                mean = np.mean(btot1)
-                std = np.std(btot1)
+                mean = np.nanmean(btot1)
+                std = np.nanstd(btot1)
                 keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
                 btot1[np.invert(keep_ind)] = np.nan
                 nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
@@ -439,7 +449,8 @@ def SolarWindParser(
                     'settings': settings,
                     'fit_results': rfit,
                     'fit_scale': -rfit[0][0],
-                    'normality': normalities['shapiro']
+                    'normality': normalities['kstest'],
+                    'r': np.nanmean(r)
                 }
                 
                 # append the scan_in
@@ -515,7 +526,9 @@ def SolarWindParser(
                     break
                 # otherwise eat one more step
                 else:
-                    print("Eating...: tstart=%s, tend=%s, normality=%.4f, nan_ratio = %.4f, rfit = %.4f, len = %s" %(tstart_in, tend_in, normality_in, nan_ratio_in, rfit_in, tend_in - tstart_in))
+                    print("Eating...: tstart=%s, tend=%s, normality=%.4f, nan_ratio = %.4f, rfit = %.4f, len = %s, r=%.4f" %(
+                        tstart_in, tend_in, normality_in, nan_ratio_in, rfit_in, tend_in - tstart_in, np.nanmean(r))
+                         )
                     tend_in = tend_in + step_in    
                     
                 # end the loop if it reach the end
