@@ -8,6 +8,7 @@ from scipy.optimize import curve_fit
 import tqdm
 from gc import collect
 from parfor import parfor
+import warnings
 
 # default settings
 default_settings = {
@@ -84,6 +85,7 @@ def SolarWindScanner(
     step = settings['step']
     
     print("Samples per win: %d" %(int(1./(Btot.index[-1]-Btot.index[0]).total_seconds()*win.total_seconds()*len(Btot))))
+    print("Sampling cadence: %s" %(Btot.index[1]-Btot.index[0]))
 
     tstart0 = Btot.index[0]
     tend0 = tstart0 + win
@@ -352,7 +354,14 @@ def SolarWindParser(
     tend = tstart + win
     scans = []
     streams = []
+
+    print("Sampling cadence: %s" %(Btot.index[1]-Btot.index[0]))
+    
     while True:
+
+        if tend > df_scans.index[-1]:
+            print("Reached end of df_scans")
+            break
         
         try:
             normality = df_scans.loc[tstart,normality_key]
@@ -429,10 +438,14 @@ def SolarWindParser(
                             # a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
                         elif method == 'kstest':
                             # normalize the distribution for kstest
-                            @parfor(range(ms['Ntests']), (x, kstest, downsample_size,), bar=False)
-                            def worker(i1, x, kstest, downsample_size):
-                                return kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue
-                            a1 = np.array(worker)
+                            try:
+                                @parfor(range(ms['Ntests']), (x, kstest, downsample_size,), bar=False)
+                                def worker(i1, x, kstest, downsample_size):
+                                    return kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue
+                                a1 = np.array(worker)
+                            except:
+                                warnings.warn("No parfor")
+                                a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace=False), 'norm').pvalue for i1 in range(ms['Ntests'])])
                             # a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
                         else:
                             raise ValueError("Wrong method")
@@ -486,27 +499,30 @@ def SolarWindParser(
                     
                     # keep the interval up until normality_thresh_keep
                     print(" Thresh keep: %.4f " %(normality_thresh_keep))
-                    while(len(scans_in) > 0):
+                    id_keep = -1
+                    while(len(scans_in)+id_keep+1 >= 0):
                         # pop the last one if with bad normality
-                        if scans_in[-1]['normality'] < normality_thresh_keep:
-                            pop_out = scans_in.pop()
-                            print("poping: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                                pop_out['t0'], pop_out['t1'], pop_out['normality'], pop_out['fit_scale'], (pop_out['t1']-pop_out['t0'])/np.timedelta64(1, 'h')
+                        if scans_in[id_keep]['normality'] < normality_thresh_keep:
+                            pop_out = scans_in[id_keep]
+                            print("poping: id_keep=%d, tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
+                                id_keep, pop_out['t0'], pop_out['t1'], pop_out['normality'], pop_out['fit_scale'], (pop_out['t1']-pop_out['t0'])/np.timedelta64(1, 'h')
                                 ))
                         # if the last one is good, break
                         else:
                             print("")
                             print("keeping: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr, len = %d" %(
-                                scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], scans_in[-1]['fit_scale'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h'), len(scans_in)
+                                scans_in[id_keep]['t0'], scans_in[id_keep]['t1'], scans_in[id_keep]['normality'], scans_in[id_keep]['fit_scale'], (scans_in[id_keep]['t1']-scans_in[id_keep]['t0'])/np.timedelta64(1, 'h'), len(scans_in)
                                 ))
                             # set the new starting point
                             print("")
                             print("Finished Eating!! Falling back, resetting tstart = %s - %s" %(scans_in[-1]['t1'], fallback_size))
-                            tstart = scans_in[-1]['t1'] - fallback_size
+                            tstart = scans_in[id_keep]['t1'] - fallback_size
                             tend = tstart + win
                             # store the inner loop scanning records
                             streams.append(scans_in)
                             break
+
+                        id_keep = id_keep - 1
                             
                     
                     # if nothing left, go forward with forward_size
