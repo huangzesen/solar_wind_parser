@@ -278,7 +278,7 @@ def SolarWindScannerInnerLoopParallel(i1):
             scan = {
                 't0': tstart,
                 't1': tend,
-                'nan_ratio': 1.0,
+                'nan_ratio': np.nan,
                 'distances': distances,
                 'r_ratio': np.nan,
                 'settings': settings,
