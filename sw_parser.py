@@ -9,6 +9,8 @@ import tqdm
 from gc import collect
 from parfor import parfor
 import warnings
+from scipy import stats
+from scipy.spatial.distance import jensenshannon
 
 # default settings
 default_settings = {
@@ -56,7 +58,8 @@ def SolarWindScanner(
     settings = None,
     parallel = False,
     verbose = False,
-    Ncores = 8
+    Ncores = 8,
+    interpolated = None
 ):
 
     """
@@ -72,6 +75,9 @@ def SolarWindScanner(
     
     if 'downsample_size' not in settings.keys():
         settings['downsample_size'] = 500
+
+    if 'normality_mode' not in settings.keys():
+        settings['normality_mode'] = 'score'
 
     if verbose:
         print("\n----------------------------------")
@@ -95,20 +101,31 @@ def SolarWindScanner(
     N = int(np.floor((Btot.index[-1] - tend0)/step)) + 1
     inputs = []
 
-    print('Interpolating Dist_au...')
+    if interpolated is None:
+        print('Interpolating Dist_au...')
 
-    # interpolate Dist_au with scipy.interpolate.interp1d
-    ts = np.array([t.timestamp() for t in Dist_au.index])
-    f_dist_au = interp1d(ts, Dist_au.values, 'linear', fill_value='extrapolate')
+        # interpolate Dist_au with scipy.interpolate.interp1d
+        ts = np.array([t.timestamp() for t in Dist_au.index])
+        f_dist_au = interp1d(ts, Dist_au.values, 'linear', fill_value='extrapolate')
 
-    # create Btot unix index
-    Btot_index_unix = np.array([t.timestamp() for t in Btot.index])
+        # create Btot unix index
+        Btot_index_unix = np.array([t.timestamp() for t in Btot.index])
+    else:
+        print('Interpolated Dist_au!')
+        ts = interpolated['ts']
+        f_dist_au = interpolated['f_dist_au']
+        Btot_index_unix = interpolated['Btot_index_unix']
 
     # print the input value range and Btot index range
     print('Dist_au: %s - %s' %(Dist_au.index[0], Dist_au.index[-1]))
     print('Btot: %s - %s' %(Btot.index[0], Btot.index[-1]))
 
     print("\nTotal intervals= %d\n" %(N))
+
+    # discard unphysical values
+    ind = Btot < 0.1
+    Btot.loc[ind] = np.nan
+    print("%d out of %d unphysical! Ratio %.4f %%" %(np.sum(ind), len(Btot), np.sum(ind)/len(Btot)*100))
 
     if parallel:
         print("Mode: parallel")
@@ -180,9 +197,8 @@ def SolarWindScannerInnerLoopParallel(i1):
 
     win = settings['win']
     step = settings['step']
-    methods = settings['methods']
-    downsample_size = settings['downsample_size']
     n_sigma = settings['n_sigma']
+    normality_mode = settings['normality_mode']
 
     tstart= tstart0 + i1 * step
     tend = tstart + win
@@ -190,85 +206,185 @@ def SolarWindScannerInnerLoopParallel(i1):
     indices = Btot.index[ind]
     btot = Btot[indices].values
 
-    try:
+    nan_infos = {
+        'raw': {'len': len(btot), 'count': np.sum(np.isnan(btot)),'ratio': np.sum(np.isnan(btot))/len(btot)}
+    }
+    nan_infos['flag'] = 1
 
-        ts = Btot_index_unix[ind]
-        r = f_dist_au(ts)
+    if normality_mode == 'distance':
+        divergence = settings['divergence']
 
-        # find the rescaling scale with r
-        ind = np.invert((np.isnan(r)) | np.isnan(btot))
-        rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
-        scale = -rfit[0][0]
+        try:
 
-        # normalize btot with r
-        btot1 = btot * ((r/r[0])**scale)
+            ts = Btot_index_unix[ind]
+            r = f_dist_au(ts)
 
-        # dist ratio
-        r_ratio = np.max(r)/np.min(r)
-        
-        
-        # discard points outside of n sigma
-        # solar wind has a much higher chance than gaussian to have extreme values
-        mean = np.nanmean(btot1)
-        std = np.nanstd(btot1)
-        keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
-        btot1[np.invert(keep_ind)] = np.nan
-        nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
-        x = btot1[np.invert(np.isnan(btot1))]
+            # find the rescaling scale with r
+            ind = np.invert((np.isnan(r)) | np.isnan(btot))
+            rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
+            scale = -rfit[0][0]
 
-        normalities = {}    
-        for method, ms in methods.items():
-            if len(x) < 10000:
-                # if not enough samples, continue
-                normality = np.nan
-                raise ValueError("Not enough samples, len=%d, bmean=%.4f, bstd=%.4f" %(len(x), np.mean(x), np.std(x)))
-            else:
-                # normalize input for normality test
-                x = (x-np.mean(x))/np.std(x)
+            # normalize btot with r
+            btot1 = btot * ((r/r[0])**scale)
 
-                # normality test
-                if method == 'shapiro':
-                    a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
-                elif method == 'kstest':
-                    # normalize the distribution for kstest
-                    a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
+            # dist ratio
+            r_ratio = np.max(r)/np.min(r)
+            
+            
+            # discard points outside of n sigma
+            # solar wind has a much higher chance than gaussian to have extreme values
+            mean = np.nanmean(btot1)
+            std = np.nanstd(btot1)
+            keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
+            btot1[np.invert(keep_ind)] = np.nan
+            nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
+            x = btot1[np.invert(np.isnan(btot1))]
+
+            # rescale x
+            x = (x-np.mean(x))/np.std(x)
+
+            # calculate the distance
+            distances = {}
+
+            # calculate pdf of x
+            nbins = divergence['js']['nbins']
+            bins = np.linspace(-n_sigma, n_sigma, nbins)
+            hist_data, bin_edges_data = np.histogram(x, bins=bins, density=True)
+
+            # Compute the PDF of the Gaussian distribution at the mid-points of the histogram bins
+            bin_midpoints = bin_edges_data[:-1] + np.diff(bin_edges_data) / 2
+            pdf_gaussian = stats.norm.pdf(bin_midpoints, 0, 1)
+
+            js_div = jensenshannon(hist_data, pdf_gaussian)
+            distances['js'] = js_div
+
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'nan_ratio': nan_ratio,
+                'distances': distances,
+                'r_ratio': r_ratio,
+                'settings': settings,
+                'fit_results': rfit,
+                'nan_infos': nan_infos
+            }
+
+
+        except:
+            rfit = (
+                np.array([np.nan,np.nan]), np.array([[np.nan,np.nan],[np.nan,np.nan]])
+            )
+            distances = {'js':np.nan}
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'nan_ratio': 1.0,
+                'distances': distances,
+                'r_ratio': np.nan,
+                'settings': settings,
+                'fit_results': rfit,
+                'nan_infos': nan_infos
+            }
+
+    elif normality_mode == 'find_nan':
+
+        scan = {
+            't0': tstart,
+            't1': tend,
+            'settings': settings,
+            'nan_infos': nan_infos
+        }
+
+
+    elif normality_mode == 'score':
+        methods = settings['methods']
+        downsample_size = settings['downsample_size']
+
+        try:
+
+            ts = Btot_index_unix[ind]
+            r = f_dist_au(ts)
+
+            # find the rescaling scale with r
+            ind = np.invert((np.isnan(r)) | np.isnan(btot))
+            rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
+            scale = -rfit[0][0]
+
+            # normalize btot with r
+            btot1 = btot * ((r/r[0])**scale)
+
+            # dist ratio
+            r_ratio = np.max(r)/np.min(r)
+            
+            
+            # discard points outside of n sigma
+            # solar wind has a much higher chance than gaussian to have extreme values
+            mean = np.nanmean(btot1)
+            std = np.nanstd(btot1)
+            keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
+            btot1[np.invert(keep_ind)] = np.nan
+            nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
+            x = btot1[np.invert(np.isnan(btot1))]
+
+            normalities = {}    
+            for method, ms in methods.items():
+                if len(x) < 10000:
+                    # if not enough samples, continue
+                    normality = np.nan
+                    raise ValueError("Not enough samples, len=%d, bmean=%.4f, bstd=%.4f" %(len(x), np.mean(x), np.std(x)))
                 else:
-                    raise ValueError("Wrong method")
-                normality = np.sum(a1 > 0.05)/len(a1)
-                # if np.isnan(normality):
-                    # raise ValueError("normality nan!!")
-            
-            normalities[method] = normality
-        
-        scan = {
-            't0': tstart,
-            't1': tend,
-            'nan_ratio': nan_ratio,
-            'normalities': normalities,
-            'r_ratio': r_ratio,
-            'settings': settings,
-            'fit_results': rfit
-        }
+                    # normalize input for normality test
+                    x = (x-np.mean(x))/np.std(x)
 
-    except:
-        # raise ValueError("normality nan!!")
-        # r_ratio = np.max(r)/np.min(r)
-        normalities = {}    
-        for method, ms in methods.items():
-            normalities[method]=np.nan
+                    # normality test
+                    if method == 'shapiro':
+                        a1 = np.array([shapiro(np.random.choice(x, size=downsample_size, replace = False)).pvalue for i1 in range(ms['Ntests'])])
+                    elif method == 'kstest':
+                        # normalize the distribution for kstest
+                        a1 = np.array([kstest(np.random.choice(x, size=downsample_size, replace = False), 'norm').pvalue for i1 in range(ms['Ntests'])])
+                    else:
+                        raise ValueError("Wrong method")
+                    normality = np.sum(a1 > 0.05)/len(a1)
+                    # if np.isnan(normality):
+                        # raise ValueError("normality nan!!")
+                
+                normalities[method] = normality
             
-        rfit = (
-            np.array([np.nan,np.nan]), np.array([[np.nan,np.nan],[np.nan,np.nan]])
-        )
-        scan = {
-            't0': tstart,
-            't1': tend,
-            'nan_ratio': 1.0,
-            'normalities': normalities,
-            'r_ratio': np.nan,
-            'settings': settings,
-            'fit_results': rfit
-        }
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'nan_ratio': nan_ratio,
+                'normalities': normalities,
+                'r_ratio': r_ratio,
+                'settings': settings,
+                'fit_results': rfit,
+                'nan_infos': nan_infos
+            }
+
+        except:
+            # raise ValueError("normality nan!!")
+            # r_ratio = np.max(r)/np.min(r)
+            normalities = {}    
+            for method, ms in methods.items():
+                normalities[method]=np.nan
+                
+            rfit = (
+                np.array([np.nan,np.nan]), np.array([[np.nan,np.nan],[np.nan,np.nan]])
+            )
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'nan_ratio': 1.0,
+                'normalities': normalities,
+                'r_ratio': np.nan,
+                'settings': settings,
+                'fit_results': rfit,
+                'nan_infos': nan_infos
+            }
+
+
+    else:
+        raise ValueError("Wrong mode: %s" %(normality_mode))
 
     return scan
 
@@ -360,7 +476,7 @@ def SolarWindParser(
     while True:
 
         if tend > df_scans.index[-1]:
-            print("Reached end of df_scans")
+            print("The end of df_scans!!\n")
             break
         
         try:
@@ -484,15 +600,15 @@ def SolarWindParser(
                     
                     print("")
                     print(" Thresh out: %.4f " %(normality_thresh_out))
-                    print("first: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                        scans_in[0]['t0'], scans_in[0]['t1'], scans_in[0]['normality'], scans_in[0]['fit_scale'], (scans_in[0]['t1']-scans_in[0]['t0'])/np.timedelta64(1, 'h')
+                    print("first: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %s" %(
+                        scans_in[0]['t0'], scans_in[0]['t1'], scans_in[0]['normality'], scans_in[0]['fit_scale'], (scans_in[0]['t1']-scans_in[0]['t0'])
                         ))
-                    print("last: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                        scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], scans_in[-1]['fit_scale'], (scans_in[-1]['t1']-scans_in[-1]['t0'])/np.timedelta64(1, 'h')
+                    print("last: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %s" %(
+                        scans_in[-1]['t0'], scans_in[-1]['t1'], scans_in[-1]['normality'], scans_in[-1]['fit_scale'], (scans_in[-1]['t1']-scans_in[-1]['t0'])
                         ))
                     ii = np.argmax(df['normality'])
-                    print("best: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                        scans_in[ii]['t0'], scans_in[ii]['t1'], scans_in[ii]['normality'], scans_in[ii]['fit_scale'], (scans_in[ii]['t1']-scans_in[ii]['t0'])/np.timedelta64(1, 'h')
+                    print("best: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %s" %(
+                        scans_in[ii]['t0'], scans_in[ii]['t1'], scans_in[ii]['normality'], scans_in[ii]['fit_scale'], (scans_in[ii]['t1']-scans_in[ii]['t0'])
                         ))
                     print("")
                     
@@ -504,18 +620,18 @@ def SolarWindParser(
                         # pop the last one if with bad normality
                         if scans_in[id_keep]['normality'] < normality_thresh_keep:
                             pop_out = scans_in[id_keep]
-                            print("poping: id_keep=%d, tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr" %(
-                                id_keep, pop_out['t0'], pop_out['t1'], pop_out['normality'], pop_out['fit_scale'], (pop_out['t1']-pop_out['t0'])/np.timedelta64(1, 'h')
+                            print("poping: id_keep=%d, tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %s" %(
+                                id_keep, pop_out['t0'], pop_out['t1'], pop_out['normality'], pop_out['fit_scale'], (pop_out['t1']-pop_out['t0'])
                                 ))
                         # if the last one is good, break
                         else:
                             print("")
-                            print("keeping: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %.2f Hr, len = %d" %(
-                                scans_in[id_keep]['t0'], scans_in[id_keep]['t1'], scans_in[id_keep]['normality'], scans_in[id_keep]['fit_scale'], (scans_in[id_keep]['t1']-scans_in[id_keep]['t0'])/np.timedelta64(1, 'h'), len(scans_in)
+                            print("keeping: tstart=%s, tend=%s, normality=%.4f, rfit=%.4f, len = %s, scans len = %s" %(
+                                scans_in[id_keep]['t0'], scans_in[id_keep]['t1'], scans_in[id_keep]['normality'], scans_in[id_keep]['fit_scale'], (scans_in[id_keep]['t1']-scans_in[id_keep]['t0']), len(scans_in)
                                 ))
                             # set the new starting point
                             print("")
-                            print("Finished Eating!! Falling back, resetting tstart = %s - %s" %(scans_in[-1]['t1'], fallback_size))
+                            print("Finished Eating!! Falling back, resetting tstart = %s - %s" %(scans_in[id_keep]['t1'], fallback_size))
                             tstart = scans_in[id_keep]['t1'] - fallback_size
                             tend = tstart + win
                             # store the inner loop scanning records
@@ -584,38 +700,39 @@ def SolarWindParser(
 
 
 def SolarWindScannerInnerLoopSequential(input):
+    raise ValueError("Don't use this.")
     # allocate variables
-    btot = input['btot']
-    r = input['r']
-    tstart = input['tstart']
-    tend = input['tend']
+    # btot = input['btot']
+    # r = input['r']
+    # tstart = input['tstart']
+    # tend = input['tend']
 
-    # normalize btot with r
-    btot1 = btot * ((r/r[0])**2)
+    # # normalize btot with r
+    # btot1 = btot * ((r/r[0])**2)
     
-    # discard points outside of 3 sigma
-    # solar wind has a much higher chance than gaussian to have extreme values
-    mean = np.mean(btot1)
-    std = np.std(btot1)
-    keep_ind = (btot1 > mean - 3*std) & (btot1 < mean + 3*std)
-    btot1[np.invert(keep_ind)] = np.nan
-    x = btot1.values[np.invert(np.isnan(btot1))]
+    # # discard points outside of 3 sigma
+    # # solar wind has a much higher chance than gaussian to have extreme values
+    # mean = np.mean(btot1)
+    # std = np.std(btot1)
+    # keep_ind = (btot1 > mean - 3*std) & (btot1 < mean + 3*std)
+    # btot1[np.invert(keep_ind)] = np.nan
+    # x = btot1.values[np.invert(np.isnan(btot1))]
 
-    if len(x) < 500:
-        # if not enough samples, continue
-        normality = np.nan
-    else:
-        # normality test
-        a1 = np.array([shapiro(np.random.choice(x, size=500)).pvalue for i1 in range(10000)])
-        normality = np.sum(a1 > 0.05)/len(a1)
+    # if len(x) < 500:
+    #     # if not enough samples, continue
+    #     normality = np.nan
+    # else:
+    #     # normality test
+    #     a1 = np.array([shapiro(np.random.choice(x, size=500)).pvalue for i1 in range(10000)])
+    #     normality = np.sum(a1 > 0.05)/len(a1)
     
-    scan = {
-        't0': tstart,
-        't1': tend,
-        'normality': normality
-    }
+    # scan = {
+    #     't0': tstart,
+    #     't1': tend,
+    #     'normality': normality
+    # }
 
-    return scan
+    # return scan
 
 
 # some testing function for parallelization
