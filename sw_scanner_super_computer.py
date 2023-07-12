@@ -3,6 +3,8 @@ from multiprocessing import Pool
 from scipy.optimize import curve_fit
 from scipy import stats
 from scipy.spatial.distance import jensenshannon
+import pickle
+import tqdm
 # import pandas as pd
 
 def round_up_to_minute(datetime):
@@ -19,6 +21,32 @@ def round_down_to_minute(datetime):
 def f(x,a,b):
     return a*x+b
 
+def js_divergence(btot1, n_sigma, nbins):
+    # discard points outside of n sigma
+    # solar wind has a much higher chance than gaussian to have extreme values
+    mean = np.nanmean(btot1)
+    std = np.nanstd(btot1)
+    keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
+    btot1[np.invert(keep_ind)] = np.nan
+    nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
+    x = btot1[np.invert(np.isnan(btot1))]
+
+    # rescale x
+    x = (x-np.mean(x))/np.std(x)
+
+    # calculate pdf of x
+    # nbins = divergence['js']['nbins']
+    bins = np.linspace(-n_sigma, n_sigma, nbins)
+    hist_data, bin_edges_data = np.histogram(x, bins=bins, density=True)
+
+    # Compute the PDF of the Gaussian distribution at the mid-points of the histogram bins
+    bin_midpoints = bin_edges_data[:-1] + np.diff(bin_edges_data) / 2
+    pdf_gaussian = stats.norm.pdf(bin_midpoints, 0, 1)
+
+    js_div = jensenshannon(hist_data, pdf_gaussian)
+
+    return js_div, nan_ratio
+
 
 def SolarWindScanner(
     index,
@@ -28,7 +56,8 @@ def SolarWindScanner(
     verbose = False,
     Ncores = 8,
     use_pandas = True,
-    progress = True
+    progress = True,
+    temporary_path = None
 ):
 
     """
@@ -71,6 +100,8 @@ def SolarWindScanner(
                         print(k, v)
                 else:
                     print(k,v)
+
+        print("Saving Temporary files to %s"%(temporary_path))
 
         print("\n---- End of settings ----\n\n")
 
@@ -123,6 +154,25 @@ def SolarWindScanner(
         'settings': settings,
         'tranges': tranges
     }
+
+    if temporary_path is not None:
+        if progress:
+            with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
+                savpoint = N // 5  # Calculate what 10% of N is
+                for i, scan in enumerate(tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N)):
+                    scans.append(scan)
+                    if (i+1) % savpoint == 0:  # If the current iteration is a multiple of 10% of N
+                        with open(temporary_path+'/'+f'scans_{((i+1)//savpoint)*20}percent.pkl', 'wb') as f:
+                            pickle.dump(scans, f)
+        else:
+            with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
+                savpoint = N // 5  # Calculate what 10% of N is
+                for i, scan in enumerate(p.imap_unordered(SolarWindScannerInnerLoopParallel, total=N)):
+                    scans.append(scan)
+                    if (i+1) % savpoint == 0:  # If the current iteration is a multiple of 10% of N
+                        with open(temporary_path+'/'+f'scans_{((i+1)//savpoint)*20}percent.pkl', 'wb') as f:
+                            pickle.dump(scans, f)
+
     
     if progress:
         with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
@@ -173,6 +223,18 @@ def SolarWindScannerInnerLoopParallel(i1):
 
         try:
 
+            # calculate the distance
+            distances = {}
+            
+            # usual divergence
+            js_div, nan_ratio = js_divergence(btot, n_sigma, divergence['js']['nbins'])
+            distances['js'] = {'divergence': js_div, 'nan_ratio': nan_ratio}
+
+            # log divergence
+            js_div, nan_ratio = js_divergence(np.log10(btot), n_sigma, divergence['js']['nbins'])
+            distances['js_log'] = {'divergence': js_div, 'nan_ratio': nan_ratio}
+
+
             # find the rescaling scale with r
             ind = np.invert((np.isnan(r)) | np.isnan(btot))
             rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
@@ -183,40 +245,18 @@ def SolarWindScannerInnerLoopParallel(i1):
 
             # dist ratio
             r_ratio = np.max(r)/np.min(r)
-            
-            
-            # discard points outside of n sigma
-            # solar wind has a much higher chance than gaussian to have extreme values
-            mean = np.nanmean(btot1)
-            std = np.nanstd(btot1)
-            keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
-            btot1[np.invert(keep_ind)] = np.nan
-            nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
-            x = btot1[np.invert(np.isnan(btot1))]
 
-            # rescale x
-            x = (x-np.mean(x))/np.std(x)
+            js_div, nan_ratio = js_divergence(btot1, n_sigma, divergence['js']['nbins'])
+            distances['js_r_scaled'] = {'divergence': js_div, 'nan_ratio': nan_ratio}
 
-            # calculate the distance
-            distances = {}
-
-            # calculate pdf of x
-            nbins = divergence['js']['nbins']
-            bins = np.linspace(-n_sigma, n_sigma, nbins)
-            hist_data, bin_edges_data = np.histogram(x, bins=bins, density=True)
-
-            # Compute the PDF of the Gaussian distribution at the mid-points of the histogram bins
-            bin_midpoints = bin_edges_data[:-1] + np.diff(bin_edges_data) / 2
-            pdf_gaussian = stats.norm.pdf(bin_midpoints, 0, 1)
-
-            js_div = jensenshannon(hist_data, pdf_gaussian)
-            distances['js'] = js_div
+            js_div, nan_ratio = js_divergence(np.log10(btot1), n_sigma, divergence['js']['nbins'])
+            distances['js_log_r_scaled'] = {'divergence': js_div, 'nan_ratio': nan_ratio}
 
             scan = {
                 't0': tstart,
                 't1': tend,
                 'win': win,
-                'nan_ratio': nan_ratio,
+                # 'nan_ratio': nan_ratio,
                 'distances': distances,
                 'r_ratio': r_ratio,
                 'fit_results': rfit,
@@ -228,12 +268,11 @@ def SolarWindScannerInnerLoopParallel(i1):
             rfit = (
                 np.array([np.nan,np.nan]), np.array([[np.nan,np.nan],[np.nan,np.nan]])
             )
-            distances = {'js':np.nan}
+            distances = None
             scan = {
                 't0': tstart,
                 't1': tend,
                 'win': win,
-                'nan_ratio': np.nan,
                 'distances': distances,
                 'r_ratio': np.nan,
                 'fit_results': rfit,

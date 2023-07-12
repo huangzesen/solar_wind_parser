@@ -48,7 +48,10 @@ def SolarWindScanner(
     win = settings['win']
     step = settings['step']
     
-    print("Samples per win: %d" %(int(1./(index[-1]-index[0]).astype(float)*win.astype(float)*len(Btot))))
+    total_length = (index[-1]-index[0])/np.timedelta64(1,'s')
+    window_length = win/np.timedelta64(1,'s')
+    samples_per_win = window_length/total_length * len(Btot)
+    print("Samples per win: %d" %(samples_per_win))
     sample_cadence = index[1]-index[0]
     if use_pandas:
         sample_cadence = pd.Timedelta(sample_cadence)
