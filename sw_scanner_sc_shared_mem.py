@@ -16,8 +16,7 @@ def SolarWindScanner(
     settings = None,
     verbose = False,
     Ncores = 8,
-    use_pandas = True,
-    temporary_path = None
+    use_pandas = True
 ):
 
     """
@@ -57,8 +56,6 @@ def SolarWindScanner(
                         print(k, v)
                 else:
                     print(k,v)
-
-        print("Saving Temporary files to %s"%(temporary_path))
 
         print("\n---- End of settings ----\n\n")
 
