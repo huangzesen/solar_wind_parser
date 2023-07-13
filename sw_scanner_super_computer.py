@@ -159,7 +159,7 @@ def SolarWindScanner(
         if progress:
             with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
                 savpoint = N // 5  # Calculate what 10% of N is
-                for i, scan in enumerate(tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N)):
+                for i, scan in enumerate(tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=5)):
                     scans.append(scan)
                     if (i+1) % savpoint == 0:  # If the current iteration is a multiple of 10% of N
                         with open(temporary_path+'/'+f'scans_{((i+1)//savpoint)*20}percent.pkl', 'wb') as f:
@@ -176,7 +176,7 @@ def SolarWindScanner(
     
     if progress:
         with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
-            for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N):
+            for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=5):
                 scans.append(scan)
     else:
         with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
