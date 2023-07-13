@@ -104,7 +104,7 @@ def SolarWindScanner(
 
 
     with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
-        for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=5):
+        for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=0.1):
             scans.append(scan)
 
 

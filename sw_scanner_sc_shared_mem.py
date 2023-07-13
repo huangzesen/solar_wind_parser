@@ -5,18 +5,35 @@ from scipy import stats
 from scipy.spatial.distance import jensenshannon
 import pickle
 import tqdm
+from concurrent.futures import ProcessPoolExecutor, as_completed
 # import pandas as pd
 from sw_scanner_lib import round_up_to_minute, round_down_to_minute,f,js_divergence
 import concurrent.futures
 from multiprocessing import shared_memory
+import pickle
 
 def create_shared_memory(alloc_input):
     shm_blocks = {}
     for key, value in alloc_input.items():
-        shm = shared_memory.SharedMemory(create=True, size=value.nbytes)
-        np.ndarray(value.shape, dtype=value.dtype, buffer=shm.buf).copy_(value)
-        shm_blocks[key] = (shm.name, value.shape, value.dtype)
+        if isinstance(value, np.ndarray):
+            # Create shared memory block for numpy array
+            shm = shared_memory.SharedMemory(create=True, size=value.nbytes)
+            # Copy data to shared memory block
+            np.ndarray(value.shape, dtype=value.dtype, buffer=shm.buf)[:] = value
+            # Store the name of the shared memory block, and the shape and dtype for reconstruction later
+            shm_blocks[key] = (shm.name, value.shape, value.dtype)
+        else:
+            # Handle non-numpy data (pickle to bytes and store in shared memory)
+            bytes_data = pickle.dumps(value)
+            shm = shared_memory.SharedMemory(create=True, size=len(bytes_data))
+            # Copy data to shared memory block
+            shm.buf[:len(bytes_data)] = bytes_data
+            # Store the name of the shared memory block, and the size for reconstruction later
+            shm_blocks[key] = (shm.name, len(bytes_data))
     return shm_blocks
+
+
+
 
 def destroy_shared_memory(shm_blocks):
     for shm_info in shm_blocks.values():
@@ -27,8 +44,13 @@ def destroy_shared_memory(shm_blocks):
 def worker(i1, shm_blocks):
     data = {}
     for key, shm_info in shm_blocks.items():
+        # Open the shared memory block
         shm = shared_memory.SharedMemory(name=shm_info[0])
-        data[key] = np.ndarray(shm_info[1], dtype=shm_info[2], buffer=shm.buf)
+        # Differentiate between numpy arrays and non-numpy data
+        if len(shm_info) == 3:  # this is a numpy array
+            data[key] = np.ndarray(shm_info[1], dtype=shm_info[2], buffer=shm.buf)
+        else:  # this is non-numpy data
+            data[key] = pickle.loads(bytes(shm.buf[:shm_info[1]]))
     # Now you can access the data from shared memory, for example:
     scan = SolarWindScannerInnerLoopParallel(i1, data)
     return scan
@@ -99,7 +121,6 @@ def SolarWindScanner(
     tendmax = tstart0
     for i1, win in enumerate(wins):
         tend0 = tstart0 + win
-        scans = []
 
         # calculate num of steps
         N1 = int(np.floor((index[-1] - tend0)/step)) + 1
@@ -136,20 +157,22 @@ def SolarWindScanner(
     shm_blocks = create_shared_memory(alloc_input)
     scans = []
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=Ncores) as executor:
         # Prepare all the tasks
-        futures = {executor.submit(worker, i1, shm_blocks) for i1 in range(N)}
-        # Initialize a progress bar
-        progress_bar = tqdm.tqdm(total=len(futures), desc="Processing", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
+        futures = [executor.submit(worker, i1, shm_blocks) for i1 in range(N)]
+        pbar = tqdm.tqdm(total=N, desc='Processing', mininterval=1)
         
-        for future in concurrent.futures.as_completed(futures):
+        # Iterate over completed futures and update progress bar
+        for future in as_completed(futures):
+            # get result and append it to scans
             scan = future.result()
             scans.append(scan)
-            progress_bar.update(1)  # Update the progress bar for each completed task
+            # update progress bar
+            pbar.update()
 
     destroy_shared_memory(shm_blocks)
 
-    progress_bar.close()  # Make sure to close the progress bar at the end
+    pbar.close()  # Make sure to close the progress bar at the end
 
     return scans
 
