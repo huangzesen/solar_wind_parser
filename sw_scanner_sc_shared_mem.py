@@ -7,6 +7,32 @@ import pickle
 import tqdm
 # import pandas as pd
 from sw_scanner_lib import round_up_to_minute, round_down_to_minute,f,js_divergence
+import concurrent.futures
+from multiprocessing import shared_memory
+
+def create_shared_memory(alloc_input):
+    shm_blocks = {}
+    for key, value in alloc_input.items():
+        shm = shared_memory.SharedMemory(create=True, size=value.nbytes)
+        np.ndarray(value.shape, dtype=value.dtype, buffer=shm.buf).copy_(value)
+        shm_blocks[key] = (shm.name, value.shape, value.dtype)
+    return shm_blocks
+
+def destroy_shared_memory(shm_blocks):
+    for shm_info in shm_blocks.values():
+        shm = shared_memory.SharedMemory(name=shm_info[0])
+        shm.close()
+        shm.unlink()
+
+def worker(i1, shm_blocks):
+    data = {}
+    for key, shm_info in shm_blocks.items():
+        shm = shared_memory.SharedMemory(name=shm_info[0])
+        data[key] = np.ndarray(shm_info[1], dtype=shm_info[2], buffer=shm.buf)
+    # Now you can access the data from shared memory, for example:
+    scan = SolarWindScannerInnerLoopParallel(i1, data)
+    return scan
+
 
 
 def SolarWindScanner(
@@ -103,10 +129,27 @@ def SolarWindScanner(
     }
 
 
-    with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
-        for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=5):
-            scans.append(scan)
+    # with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
+    #     for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=5):
+    #         scans.append(scan)
 
+    shm_blocks = create_shared_memory(alloc_input)
+    scans = []
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        # Prepare all the tasks
+        futures = {executor.submit(worker, i1, shm_blocks) for i1 in range(N)}
+        # Initialize a progress bar
+        progress_bar = tqdm.tqdm(total=len(futures), desc="Processing", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
+        
+        for future in concurrent.futures.as_completed(futures):
+            scan = future.result()
+            scans.append(scan)
+            progress_bar.update(1)  # Update the progress bar for each completed task
+
+    destroy_shared_memory(shm_blocks)
+
+    progress_bar.close()  # Make sure to close the progress bar at the end
 
     return scans
 
@@ -121,9 +164,14 @@ def InitParallelAllocation(alloc_input):
 
 
 
-def SolarWindScannerInnerLoopParallel(i1):
+def SolarWindScannerInnerLoopParallel(i1, data):
     # access global variables
-    global index, Btot, Dist_au, settings, tranges
+    # global index, Btot, Dist_au, settings, tranges
+    index = data['index']
+    Btot = data['Btot']
+    Dist_au = data['Dist_au']
+    settings = data['settings']
+    tranges = data['tranges']
 
     n_sigma = settings['n_sigma']
     normality_mode = settings['normality_mode']
