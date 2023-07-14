@@ -119,14 +119,13 @@ def SolarWindScannerInnerLoopParallel(i1):
     tend = tstart + win
     ind = (index >= tstart) & (index < tend)
     btot = Btot[ind]
-    r = Dist_au[ind]
-
     nan_infos = {
         'raw': {'len': len(btot), 'count': np.sum(np.isnan(btot)),'ratio': np.sum(np.isnan(btot))/len(btot)}
     }
     nan_infos['flag'] = 1
 
     if normality_mode == 'divergence':
+        r = Dist_au[ind]
         divergence = settings['divergence']
 
         try:
@@ -197,6 +196,64 @@ def SolarWindScannerInnerLoopParallel(i1):
                 'fit_results': rfit,
                 'nan_infos': nan_infos
             }
+
+    elif normality_mode == 'divergence_scaled_btot':
+
+        divergence = settings['divergence']
+
+        try:
+
+            btot1 = btot
+            
+            # discard points outside of n sigma
+            # solar wind has a much higher chance than gaussian to have extreme values
+            mean = np.nanmean(btot1)
+            std = np.nanstd(btot1)
+            keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
+            btot1[np.invert(keep_ind)] = np.nan
+            nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
+            x = btot1[np.invert(np.isnan(btot1))]
+
+            # rescale x
+            x = (x-np.mean(x))/np.std(x)
+
+            # calculate the distance
+            distances = {}
+
+            # calculate pdf of x
+            nbins = divergence['js']['nbins']
+            bins = np.linspace(-n_sigma, n_sigma, nbins)
+            hist_data, bin_edges_data = np.histogram(x, bins=bins, density=True)
+
+            # Compute the PDF of the Gaussian distribution at the mid-points of the histogram bins
+            bin_midpoints = bin_edges_data[:-1] + np.diff(bin_edges_data) / 2
+            pdf_gaussian = stats.norm.pdf(bin_midpoints, 0, 1)
+
+            js_div = jensenshannon(hist_data, pdf_gaussian)
+            distances['js'] = js_div
+
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'nan_ratio': nan_ratio,
+                'distances': distances,
+                'settings': settings,
+                'nan_infos': nan_infos
+            }
+
+
+        except:
+            # raise ValueError("fuck")
+            distances = {'js':np.nan}
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'nan_ratio': np.nan,
+                'distances': distances,
+                'settings': settings,
+                'nan_infos': nan_infos
+            }
+
 
     elif normality_mode == 'find_nan':
 

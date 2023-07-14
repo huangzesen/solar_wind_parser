@@ -1,60 +1,12 @@
 import numpy as np
-from multiprocessing import Pool
+from multiprocessing import Pool, shared_memory
 from scipy.optimize import curve_fit
 from scipy import stats
 from scipy.spatial.distance import jensenshannon
 import pickle
 import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
 # import pandas as pd
 from sw_scanner_lib import round_up_to_minute, round_down_to_minute,f,js_divergence
-import concurrent.futures
-from multiprocessing import shared_memory
-import pickle
-
-def create_shared_memory(alloc_input):
-    shm_blocks = {}
-    for key, value in alloc_input.items():
-        if isinstance(value, np.ndarray):
-            # Create shared memory block for numpy array
-            shm = shared_memory.SharedMemory(create=True, size=value.nbytes)
-            # Copy data to shared memory block
-            np.ndarray(value.shape, dtype=value.dtype, buffer=shm.buf)[:] = value
-            # Store the name of the shared memory block, and the shape and dtype for reconstruction later
-            shm_blocks[key] = (shm.name, value.shape, value.dtype)
-        else:
-            # Handle non-numpy data (pickle to bytes and store in shared memory)
-            bytes_data = pickle.dumps(value)
-            shm = shared_memory.SharedMemory(create=True, size=len(bytes_data))
-            # Copy data to shared memory block
-            shm.buf[:len(bytes_data)] = bytes_data
-            # Store the name of the shared memory block, and the size for reconstruction later
-            shm_blocks[key] = (shm.name, len(bytes_data))
-    return shm_blocks
-
-
-
-
-def destroy_shared_memory(shm_blocks):
-    for shm_info in shm_blocks.values():
-        shm = shared_memory.SharedMemory(name=shm_info[0])
-        shm.close()
-        shm.unlink()
-
-def worker(i1, shm_blocks):
-    data = {}
-    for key, shm_info in shm_blocks.items():
-        # Open the shared memory block
-        shm = shared_memory.SharedMemory(name=shm_info[0])
-        # Differentiate between numpy arrays and non-numpy data
-        if len(shm_info) == 3:  # this is a numpy array
-            data[key] = np.ndarray(shm_info[1], dtype=shm_info[2], buffer=shm.buf)
-        else:  # this is non-numpy data
-            data[key] = pickle.loads(bytes(shm.buf[:shm_info[1]]))
-    # Now you can access the data from shared memory, for example:
-    scan = SolarWindScannerInnerLoopParallel(i1, data)
-    return scan
-
 
 
 def SolarWindScanner(
@@ -81,6 +33,21 @@ def SolarWindScanner(
                 find_nan: calculate the nan ratio
             
     """
+
+    # Create shared memory block for each array
+    shm_Btot = shared_memory.SharedMemory(create=True, size=Btot.nbytes)
+    shm_Dist_au = shared_memory.SharedMemory(create=True, size=Dist_au.nbytes)
+    shm_index = shared_memory.SharedMemory(create=True, size=index.nbytes)
+
+    # Create numpy array view for each block
+    Btot_shared = np.ndarray(Btot.shape, dtype=Btot.dtype, buffer=shm_Btot.buf)
+    Dist_au_shared = np.ndarray(Dist_au.shape, dtype=Dist_au.dtype, buffer=shm_Dist_au.buf)
+    index_shared = np.ndarray(index.shape, dtype=index.dtype, buffer=shm_index.buf)
+
+    # Copy data into shared memory
+    np.copyto(Btot_shared, Btot)
+    np.copyto(Dist_au_shared, Dist_au)
+    np.copyto(index_shared, index)
 
     if use_pandas:
         import pandas as pd
@@ -121,6 +88,7 @@ def SolarWindScanner(
     tendmax = tstart0
     for i1, win in enumerate(wins):
         tend0 = tstart0 + win
+        scans = []
 
         # calculate num of steps
         N1 = int(np.floor((index[-1] - tend0)/step)) + 1
@@ -142,59 +110,53 @@ def SolarWindScanner(
     print("\nTotal intervals= %d\n" %(N))
 
     alloc_input = {
-        'index': index,
-        'Btot': Btot,
-        'Dist_au': Dist_au,
+        'index_name': shm_index.name,
+        'index_shape': index.shape,
+        'index_dtype': index.dtype,
+        'Btot_name': shm_Btot.name,
+        'Btot_shape': Btot.shape,
+        'Btot_dtype': Btot.dtype,
+        'Dist_au_name': shm_Dist_au.name,
+        'Dist_au_shape': Dist_au.shape,
+        'Dist_au_dtype': Dist_au.dtype,
         'settings': settings,
         'tranges': tranges
     }
 
 
-    # with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
-    #     for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=5):
-    #         scans.append(scan)
-
-    shm_blocks = create_shared_memory(alloc_input)
-    scans = []
-
-    with ProcessPoolExecutor(max_workers=Ncores) as executor:
-        # Prepare all the tasks
-        futures = [executor.submit(worker, i1, shm_blocks) for i1 in range(N)]
-        pbar = tqdm.tqdm(total=N, desc='Processing', mininterval=1)
-        
-        # Iterate over completed futures and update progress bar
-        for future in as_completed(futures):
-            # get result and append it to scans
-            scan = future.result()
+    with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
+        for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N)), total=N, mininterval=0.1):
             scans.append(scan)
-            # update progress bar
-            pbar.update()
 
-    destroy_shared_memory(shm_blocks)
+    # Don't forget to close the shared memory blocks when you're done
+    shm_Btot.close()
+    shm_Dist_au.close()
+    shm_index.close()
 
-    pbar.close()  # Make sure to close the progress bar at the end
 
     return scans
 
 
 def InitParallelAllocation(alloc_input):
     global index, Btot, Dist_au, tranges, settings
-    index = alloc_input['index']
-    Btot = alloc_input['Btot']
-    Dist_au = alloc_input['Dist_au']
+
+    shm_Btot = shared_memory.SharedMemory(name=alloc_input['Btot_name'])
+    shm_Dist_au = shared_memory.SharedMemory(name=alloc_input['Dist_au_name'])
+    shm_index = shared_memory.SharedMemory(name=alloc_input['index_name'])
+
+    index = np.ndarray(alloc_input['index_shape'], dtype=alloc_input['index_dtype'], buffer=shm_index.buf)
+    Btot = np.ndarray(alloc_input['Btot_shape'], dtype=alloc_input['Btot_dtype'], buffer=shm_Btot.buf)
+    Dist_au = np.ndarray(alloc_input['Dist_au_shape'], dtype=alloc_input['Dist_au_dtype'], buffer=shm_Dist_au.buf)
+
     settings = alloc_input['settings']
     tranges = alloc_input['tranges']
 
 
 
-def SolarWindScannerInnerLoopParallel(i1, data):
+
+def SolarWindScannerInnerLoopParallel(i1):
     # access global variables
-    # global index, Btot, Dist_au, settings, tranges
-    index = data['index']
-    Btot = data['Btot']
-    Dist_au = data['Dist_au']
-    settings = data['settings']
-    tranges = data['tranges']
+    global index, Btot, Dist_au, settings, tranges
 
     n_sigma = settings['n_sigma']
     normality_mode = settings['normality_mode']
@@ -203,8 +165,8 @@ def SolarWindScannerInnerLoopParallel(i1, data):
     win = tranges[i1]['win']
     tend = tranges[i1]['tend']
     ind = (index >= tstart) & (index < tend)
-    btot = Btot[ind]
-    r = Dist_au[ind]
+    btot = np.copy(Btot[ind])
+    r = np.copy(Dist_au[ind])
 
     nan_infos = {
         'raw': {'len': len(btot), 'count': np.sum(np.isnan(btot)),'ratio': np.sum(np.isnan(btot))/len(btot)}
