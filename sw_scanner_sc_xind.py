@@ -262,7 +262,7 @@ def SolarWindScannerInnerLoopParallel(i1):
 
 
         except:
-            # raise ValueError("fuck")s
+            raise ValueError("fuck")
             distances = {'js':np.nan}
             scan = {
                 't0': tstart,
