@@ -127,11 +127,12 @@ def SolarWindScannerInnerLoopParallel(i1):
     id0 = xinds[int(np.where(xgrid == tstart)[0][0])]
     id1 = xinds[int(np.where(xgrid == tend)[0][0])]
 
-    btot = np.copy(Btot[id0:id1])
+    skip_size = int(np.floor((id1-id0)/1e6))
+    btot = np.copy(Btot[id0:id1:skip_size])
 
     nan_infos = {
         'raw': {'len': len(btot), 'count': np.sum(np.isnan(btot)),'ratio': np.sum(np.isnan(btot))/len(btot)},
-        'ids': {'id0': id0, 'id1': id1}
+        'ids': {'id0': id0, 'id1': id1, 'skip_size': skip_size, 'len': len(btot)}
     }
     nan_infos['flag'] = 1
 
@@ -214,17 +215,9 @@ def SolarWindScannerInnerLoopParallel(i1):
 
         try:
 
-            btot1 = btot
-            
-            # discard points outside of n sigma
-            # solar wind has a much higher chance than gaussian to have extreme values
-            mean = np.nanmean(btot1)
-            std = np.nanstd(btot1)
-            keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
-            btot1[np.invert(keep_ind)] = np.nan
-            nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
-            x = btot1[np.invert(np.isnan(btot1))]
-
+            nan_count = np.sum(np.isnan(btot))
+            nan_ratio = nan_count/len(btot)
+            x = btot[np.invert(np.isnan(btot))]
 
             # rescale x
             x = (x-np.mean(x))/np.std(x)
@@ -236,6 +229,8 @@ def SolarWindScannerInnerLoopParallel(i1):
             nbins = divergence['js']['nbins']
             bins = np.linspace(-n_sigma, n_sigma, nbins)
             hist_data, bin_edges_data = np.histogram(x, bins=bins, density=True)
+            outside_count = np.sum(x < bins[0]) + np.sum(x > bins[-1])
+
 
             # Compute the PDF of the Gaussian distribution at the mid-points of the histogram bins
             bin_midpoints = bin_edges_data[:-1] + np.diff(bin_edges_data) / 2
@@ -248,9 +243,16 @@ def SolarWindScannerInnerLoopParallel(i1):
                 't0': tstart,
                 't1': tend,
                 'nan_ratio': nan_ratio,
+                'nan_count': nan_count,
                 'distances': distances,
-                # 'settings': settings,
-                'nan_infos': nan_infos
+                'nan_infos': nan_infos,
+                'histogram_infos': {
+                    'hist_data': hist_data, 
+                    'bin_edges_data': bin_edges_data,
+                    'n_sigma': n_sigma,
+                    'len': len(x),
+                    'outside_count': outside_count
+                    }
             }
 
             del locals()['btot']
