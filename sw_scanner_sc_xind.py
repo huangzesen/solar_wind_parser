@@ -128,6 +128,8 @@ def SolarWindScannerInnerLoopParallel(i1):
     id1 = xinds[int(np.where(xgrid == tend)[0][0])]
 
     skip_size = int(np.floor((id1-id0)/1e6))
+    if skip_size == 0:
+        skip_size = 1
     btot = np.copy(Btot[id0:id1:skip_size])
 
     nan_infos = {
