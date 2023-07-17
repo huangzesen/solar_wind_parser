@@ -255,13 +255,6 @@ def SolarWindScannerInnerLoopParallel(i1):
                     }
             }
 
-            del locals()['btot']
-            del locals()['x']
-            del locals()['keep_ind']
-            del locals()['btot1']
-            del nbins, bins, hist_data, bin_edges_data, bin_midpoints, pdf_gaussian
-            collect()
-
 
         except:
             # raise ValueError("fuck")
