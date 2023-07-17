@@ -127,7 +127,7 @@ def SolarWindScannerInnerLoopParallel(i1):
     id0 = xinds[int(np.where(xgrid == tstart)[0][0])]
     id1 = xinds[int(np.where(xgrid == tend)[0][0])]
 
-    btot = Btot[id0:id1]
+    btot = np.copy(Btot[id0:id1])
 
     nan_infos = {
         'raw': {'len': len(btot), 'count': np.sum(np.isnan(btot)),'ratio': np.sum(np.isnan(btot))/len(btot)},
@@ -186,7 +186,7 @@ def SolarWindScannerInnerLoopParallel(i1):
                 'nan_ratio': nan_ratio,
                 'distances': distances,
                 'r_ratio': r_ratio,
-                'settings': settings,
+                # 'settings': settings,
                 'fit_results': rfit,
                 'nan_infos': nan_infos
             }
@@ -203,7 +203,7 @@ def SolarWindScannerInnerLoopParallel(i1):
                 'nan_ratio': np.nan,
                 'distances': distances,
                 'r_ratio': np.nan,
-                'settings': settings,
+                # 'settings': settings,
                 'fit_results': rfit,
                 'nan_infos': nan_infos
             }
@@ -249,7 +249,7 @@ def SolarWindScannerInnerLoopParallel(i1):
                 't1': tend,
                 'nan_ratio': nan_ratio,
                 'distances': distances,
-                'settings': settings,
+                # 'settings': settings,
                 'nan_infos': nan_infos
             }
 
@@ -269,7 +269,7 @@ def SolarWindScannerInnerLoopParallel(i1):
                 't1': tend,
                 'nan_ratio': np.nan,
                 'distances': distances,
-                'settings': settings,
+                # 'settings': settings,
                 'nan_infos': nan_infos
             }
 
