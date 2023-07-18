@@ -250,8 +250,8 @@ def SolarWindScannerInnerLoopParallel(i1):
                 'distances': distances,
                 'nan_infos': nan_infos,
                 'histogram_infos': {
-                    'hist_data': hist_data, 
-                    'bin_edges_data': bin_edges_data,
+                    # 'hist_data': hist_data, 
+                    # 'bin_edges_data': bin_edges_data,
                     'n_sigma': n_sigma,
                     'len': len(x),
                     'outside_count': outside_count
