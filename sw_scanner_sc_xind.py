@@ -231,7 +231,7 @@ def SolarWindScannerInnerLoopParallel(i1):
 
         try:
 
-            x = np.copy(btot[np.invert(np.isnan(btot))])
+            x = btot
 
             # rescale x
             x = (x-np.mean(x))/np.std(x)
