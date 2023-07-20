@@ -17,7 +17,9 @@ def SolarWindScanner(
     verbose = False,
     Ncores = 8,
     use_pandas = True,
-    chunksize = 100
+    chunksize = 100,
+    mininterval = 10,
+    collect_garbage = True
 ):
 
     """
@@ -39,9 +41,9 @@ def SolarWindScanner(
         import pandas as pd
 
     if verbose:
-        print("\n----------------------------------------------------")
+        print("\n-----------------------------------------------------")
         print("       Solar Wind Scanner Super Computer Xinds")
-        print("----------------------------------------------------\n")
+        print("-----------------------------------------------------\n")
         print("---- Settings ----\n")
         for k,v in settings.items():
             if k == 'wins':
@@ -89,10 +91,15 @@ def SolarWindScanner(
         'win_list': win_list
     }
 
+
     scans = []
 
+    settings['collect_garbage'] = collect_garbage
+    print("Current Chunk size: %d" % chunksize)
+    print("Garbage collection: %s" % collect_garbage)
+
     with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
-        for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N), chunksize), total=N, mininterval=30):
+        for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N), chunksize), total=N, mininterval=mininterval):
             scans.append(scan)
 
 
@@ -117,6 +124,9 @@ def SolarWindScannerInnerLoopParallel(i1):
     step = settings['step']
     xinds = settings['xinds']
     xgrid = settings['xgrid']
+    capsize = settings['capsize']
+
+    collect_garbage = settings['collect_garbage']
 
     win = win_list[i1]['win']
     nsteps = win_list[i1]['nsteps']
@@ -127,26 +137,27 @@ def SolarWindScannerInnerLoopParallel(i1):
     id0 = xinds[int(np.where(xgrid == tstart)[0][0])]
     id1 = xinds[int(np.where(xgrid == tend)[0][0])]
 
-    skip_size = int(np.floor((id1-id0)/1e6))
+    skip_size = int(np.floor((id1-id0)/capsize))
     if skip_size == 0:
         skip_size = 1
-    btot = np.copy(Btot[id0:id1:skip_size])
+    # btot = np.copy(Btot[id0:id1:skip_size])
+    btot = Btot[id0:id1:skip_size]
 
     nan_infos = {
-        'raw': {'len': len(btot), 'count': np.sum(np.isnan(btot)),'ratio': np.sum(np.isnan(btot))/len(btot)},
+        # 'raw': {'len': len(btot), 'count': np.sum(np.isnan(btot)),'ratio': np.sum(np.isnan(btot))/len(btot)},
         'ids': {'id0': id0, 'id1': id1, 'skip_size': skip_size, 'len': len(btot)}
     }
     nan_infos['flag'] = 1
 
     if normality_mode == 'divergence':
-        r = Dist_au[ind]
+        # r = np.copy(Dist_au[id0:id1:skip_size])
+        r = Dist_au[id0:id1:skip_size]
         divergence = settings['divergence']
 
         try:
 
             # find the rescaling scale with r
-            ind = np.invert((np.isnan(r)) | np.isnan(btot))
-            rfit = curve_fit(f, np.log10(r[ind]), np.log10(btot[ind]))
+            rfit = curve_fit(f, np.log10(r), np.log10(btot))
             scale = -rfit[0][0]
 
             # normalize btot with r
@@ -155,71 +166,7 @@ def SolarWindScannerInnerLoopParallel(i1):
             # dist ratio
             r_ratio = np.max(r)/np.min(r)
             
-            
-            # discard points outside of n sigma
-            # solar wind has a much higher chance than gaussian to have extreme values
-            mean = np.nanmean(btot1)
-            std = np.nanstd(btot1)
-            keep_ind = (btot1 > mean - n_sigma*std) & (btot1 < mean + n_sigma*std)
-            btot1[np.invert(keep_ind)] = np.nan
-            nan_ratio = np.sum(np.isnan(btot1))/len(btot1)
-            x = btot1[np.invert(np.isnan(btot1))]
-
-            # rescale x
-            x = (x-np.mean(x))/np.std(x)
-
-            # calculate the distance
-            distances = {}
-
-            # calculate pdf of x
-            nbins = divergence['js']['nbins']
-            bins = np.linspace(-n_sigma, n_sigma, nbins)
-            hist_data, bin_edges_data = np.histogram(x, bins=bins, density=True)
-
-            # Compute the PDF of the Gaussian distribution at the mid-points of the histogram bins
-            bin_midpoints = bin_edges_data[:-1] + np.diff(bin_edges_data) / 2
-            pdf_gaussian = stats.norm.pdf(bin_midpoints, 0, 1)
-
-            js_div = jensenshannon(hist_data, pdf_gaussian)
-            distances['js'] = js_div
-
-            scan = {
-                't0': tstart,
-                't1': tend,
-                'nan_ratio': nan_ratio,
-                'distances': distances,
-                'r_ratio': r_ratio,
-                # 'settings': settings,
-                'fit_results': rfit,
-                'nan_infos': nan_infos
-            }
-
-
-        except:
-            rfit = (
-                np.array([np.nan,np.nan]), np.array([[np.nan,np.nan],[np.nan,np.nan]])
-            )
-            distances = {'js':np.nan}
-            scan = {
-                't0': tstart,
-                't1': tend,
-                'nan_ratio': np.nan,
-                'distances': distances,
-                'r_ratio': np.nan,
-                # 'settings': settings,
-                'fit_results': rfit,
-                'nan_infos': nan_infos
-            }
-
-    elif normality_mode == 'divergence_scaled_btot':
-
-        divergence = settings['divergence']
-
-        try:
-
-            nan_count = np.sum(np.isnan(btot))
-            nan_ratio = nan_count/len(btot)
-            x = btot[np.invert(np.isnan(btot))]
+            x = btot1
 
             # rescale x
             x = (x-np.mean(x))/np.std(x)
@@ -245,15 +192,75 @@ def SolarWindScannerInnerLoopParallel(i1):
                 't0': tstart,
                 't1': tend,
                 'win': win,
-                'nan_ratio': nan_ratio,
-                'nan_count': nan_count,
                 'distances': distances,
+                'r_ratio': r_ratio,
                 'nan_infos': nan_infos,
+                'fit_results': rfit,
                 'histogram_infos': {
                     # 'hist_data': hist_data, 
                     # 'bin_edges_data': bin_edges_data,
                     'n_sigma': n_sigma,
-                    'len': len(x),
+                    'outside_count': outside_count
+                    }
+            }
+
+
+        except:
+            # raise ValueError("fuck")
+            rfit = (
+                np.array([np.nan,np.nan]), np.array([[np.nan,np.nan],[np.nan,np.nan]])
+            )
+            distances = {'js':np.nan}
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'win': win,
+                'distances': distances,
+                'nan_infos': nan_infos,
+                'fit_results': rfit,
+                'histogram_infos': {
+                    'n_sigma': n_sigma,
+                    'outside_count': np.nan
+                    }
+            }
+
+
+    elif normality_mode == 'divergence_scaled_btot':
+
+        divergence = settings['divergence']
+
+        try:
+
+            x = np.copy(btot[np.invert(np.isnan(btot))])
+
+            # rescale x
+            x = (x-np.mean(x))/np.std(x)
+
+            # calculate the distance
+            distances = {}
+
+            # calculate pdf of x
+            nbins = divergence['js']['nbins']
+            bins = np.linspace(-n_sigma, n_sigma, nbins)
+            hist_data, bin_edges_data = np.histogram(x, bins=bins, density=True)
+            outside_count = np.sum(x < bins[0]) + np.sum(x > bins[-1])
+
+
+            # Compute the PDF of the Gaussian distribution at the mid-points of the histogram bins
+            bin_midpoints = bin_edges_data[:-1] + np.diff(bin_edges_data) / 2
+            pdf_gaussian = stats.norm.pdf(bin_midpoints, 0, 1)
+
+            js_div = jensenshannon(hist_data, pdf_gaussian)
+            distances['js'] = js_div
+
+            scan = {
+                't0': tstart,
+                't1': tend,
+                'win': win,
+                'distances': distances,
+                'nan_infos': nan_infos,
+                'histogram_infos': {
+                    'n_sigma': n_sigma,
                     'outside_count': outside_count
                     }
             }
@@ -267,8 +274,11 @@ def SolarWindScannerInnerLoopParallel(i1):
                 't1': tend,
                 'nan_ratio': np.nan,
                 'distances': distances,
-                # 'settings': settings,
-                'nan_infos': nan_infos
+                'nan_infos': nan_infos,
+                'histogram_infos': {
+                    'n_sigma': n_sigma,
+                    'outside_count': np.nan
+                    }
             }
 
 
@@ -284,6 +294,10 @@ def SolarWindScannerInnerLoopParallel(i1):
 
     else:
         raise ValueError("Wrong mode: %s" %(normality_mode))
+
+    if collect_garbage:
+        if i1 % 10 == 0:
+            collect()
 
     return scan
 
