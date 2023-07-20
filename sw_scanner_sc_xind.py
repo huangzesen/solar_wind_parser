@@ -140,7 +140,7 @@ def SolarWindScannerInnerLoopParallel(i1):
     skip_size = int(np.floor((id1-id0)/capsize))
     if skip_size == 0:
         skip_size = 1
-    # btot = np.copy(Btot[id0:id1:skip_size])
+
     btot = Btot[id0:id1:skip_size]
 
     nan_infos = {
@@ -231,7 +231,7 @@ def SolarWindScannerInnerLoopParallel(i1):
 
         try:
 
-            x = np.copy(btot)
+            x = btot
 
             # rescale x
             x = (x-np.mean(x))/np.std(x)
