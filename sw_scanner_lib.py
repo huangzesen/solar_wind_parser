@@ -67,9 +67,9 @@ def calc_xinds(index, t_step, use_pandas=True):
     for i1, xg in enumerate(xgrid):
         xg = xgrid[i1]
         try:
-            xind_diff = int(np.where(index[xind_last:xind_last+jumpsize] < xg)[0][-1])
+            xind_diff = int(np.where(index[xind_last:xind_last+jumpsize] <= xg)[0][-1])
         except:
-            xind_diff = int(np.where(index[xind_last:] < xg)[0][-1])
+            xind_diff = int(np.where(index[xind_last:] <= xg)[0][-1])
         xind_new = xind_diff+xind_last
         xinds[i1] = xind_new
         xind_last = xind_new
