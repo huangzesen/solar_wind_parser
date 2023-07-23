@@ -278,7 +278,7 @@ def SolarWindScannerInnerLoopParallel(i1):
                     }
             }
 
-    if normality_mode == 'all_inclusive':
+    elif normality_mode == 'all_inclusive':
         r = Dist_au[id0:id1:skip_size]
         divergence = settings['divergence']
         nbins = divergence['js']['nbins']
