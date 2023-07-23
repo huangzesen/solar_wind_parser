@@ -99,6 +99,7 @@ def SolarWindScanner(
     settings['collect_cadence'] = collect_cadence
     print("Current Chunk size: %d" % chunksize)
     print("Garbage collection: %s, cadance: %d" % (collect_garbage, collect_cadence))
+    print("Number of cores: %d" % Ncores)
 
     with Pool(Ncores, initializer=InitParallelAllocation, initargs=(alloc_input,)) as p:
         for scan in tqdm.tqdm(p.imap_unordered(SolarWindScannerInnerLoopParallel, range(N), chunksize), total=N, mininterval=mininterval):
