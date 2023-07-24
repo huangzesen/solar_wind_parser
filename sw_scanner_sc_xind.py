@@ -315,9 +315,6 @@ def SolarWindScannerInnerLoopParallel(i1):
             
             x = btot1
 
-            # rescale x
-            x = (x-np.mean(x))/np.std(x)
-
             # normal js
             js_div, outside_count = js_distance(x, n_sigma, nbins)
             distances['js_scaled'] = js_div
